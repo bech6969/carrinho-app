@@ -15,6 +15,8 @@ object Conexao {
     @Volatile var torque = 0.0
     @Volatile var corrente = 0.0
     @Volatile var atualizado = 0L
+    /** P0680 (estado logico): bit 8 girando, bit 10 horario. */
+    @Volatile var logico = 0
 
     val conectado get() = mb != null
     val parado get() = rpm == 0 && !girando

@@ -45,6 +45,11 @@
             android:screenOrientation="sensorLandscape" />
 
         <activity
+            android:name=".ReguladorActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
             android:name=".RegistrosActivity"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />

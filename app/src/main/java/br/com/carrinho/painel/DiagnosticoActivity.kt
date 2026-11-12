@@ -62,6 +62,11 @@ class DiagnosticoActivity : Activity() {
             background = GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(Color.parseColor("#1B1F24")) }
         }
         raiz.addView(veredito, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        raiz.addView(Button(this).apply {
+            text = "Ajuste do regulador (P0162) →"; isAllCaps = false; textSize = 16f; setTextColor(Color.WHITE)
+            background = GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(Color.parseColor("#8430CE")) }
+            setOnClickListener { startActivity(android.content.Intent(this@DiagnosticoActivity, ReguladorActivity::class.java)) }
+        }, LinearLayout.LayoutParams(MATCH_PARENT, dp(52)).apply { topMargin = dp(8) })
         linhas = TextView(this).apply {
             typeface = Typeface.MONOSPACE; textSize = 20f; setTextColor(Color.parseColor("#E8EAED"))
             setPadding(dp(4), dp(12), dp(4), dp(4))

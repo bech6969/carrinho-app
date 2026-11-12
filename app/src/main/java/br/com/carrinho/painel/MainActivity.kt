@@ -346,6 +346,7 @@ class MainActivity : Activity() {
                     }
                     Conexao.rpm = if (comOK) rpm else 0
                     Conexao.girando = comOK && (estado and (1 shl 8)) != 0
+                    if (comOK) Conexao.logico = estado
 
                     falhas = if (comOK) 0 else falhas + 1
                     if (falhas == Config.FALHAS_P_NEUTRO) {
