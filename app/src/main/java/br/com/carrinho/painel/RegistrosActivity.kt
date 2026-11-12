@@ -56,7 +56,7 @@ class RegistrosActivity : Activity() {
             botao("← Painel", "#2A2F36") { finish() },
             botao("Fazer backup agora", "#1A73E8") { fazerBackup() },
             botao("Compartilhar log de hoje", "#1E8E3E") { compartilhar(Registro.arquivoHoje()) },
-            botao("☁ Envio automático", "#B06000") { dialogoEnvio() },
+            botao("📦 Enviar tudo (zip)", "#B06000") { enviarZip() },
             botao("Verificar atualização", "#8430CE") {
                 info.text = "Verificando atualização…"
                 Atualizador.verificar(this, silencioso = false) { info.text = it }
@@ -163,11 +163,40 @@ class RegistrosActivity : Activity() {
         return linha
     }
 
-    private fun compartilhar(f: File) {
+    /** Junta os logs dos ultimos 7 dias e todos os backups num zip e abre o "Compartilhar"
+     *  (ex.: OneDrive ou Google Drive, de onde o Claude le os arquivos). */
+    private fun enviarZip() {
+        info.text = "Preparando o zip…"
+        Thread {
+            try {
+                val nome = "carrinho_" + java.text.SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(java.util.Date()) + ".zip"
+                val zip = File(cacheDir, nome)
+                cacheDir.listFiles { f -> f.name.startsWith("carrinho_") && f.name.endsWith(".zip") }?.forEach { it.delete() }
+                val logs = Registro.pastaLogs().listFiles { f -> f.name.endsWith(".csv") }
+                    ?.sortedByDescending { it.name }?.take(7) ?: emptyList()
+                val itens = logs.map { "logs/" + it.name to it } + Backup.lista(this).map { "backups/" + it.name to it }
+                java.util.zip.ZipOutputStream(zip.outputStream()).use { z ->
+                    for ((caminho, f) in itens) {
+                        z.putNextEntry(java.util.zip.ZipEntry(caminho))
+                        f.inputStream().use { it.copyTo(z) }
+                        z.closeEntry()
+                    }
+                }
+                runOnUiThread {
+                    info.text = "Zip com ${logs.size} log(s) e ${itens.size - logs.size} backup(s). Escolha OneDrive ou Drive."
+                    compartilhar(zip, "application/zip")
+                }
+            } catch (e: Exception) {
+                runOnUiThread { info.text = "Erro ao criar o zip: ${e.message}" }
+            }
+        }.start()
+    }
+
+    private fun compartilhar(f: File, tipo: String = "text/csv") {
         if (!f.exists()) { info.text = "Arquivo ainda não existe (nenhum registro hoje)."; return }
         val uri = FileProvider.getUriForFile(this, "$packageName.arquivos", f)
         val envio = Intent(Intent.ACTION_SEND).apply {
-            type = "text/csv"
+            type = tipo
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_SUBJECT, f.name)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
