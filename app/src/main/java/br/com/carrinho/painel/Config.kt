@@ -6,6 +6,10 @@ import com.hoho.android.usbserial.driver.UsbSerialPort
 object Config {
     /** Repositorio do GitHub de onde o app baixa as atualizacoes (Releases). */
     const val GITHUB_REPO = "bech6969/carrinho-app"
+    /** Repositorio PRIVADO que recebe os logs e backups (Envio.kt). */
+    const val REPO_LOGS = "bech6969/carrinho-logs"
+    /** Intervalo do envio automatico enquanto o app esta aberto. */
+    const val ENVIO_MIN = 15L
 
     // ---- Comunicacao (igual aos parametros P0308/P0310/P0311 do inversor) ----
     const val BAUD = 19200

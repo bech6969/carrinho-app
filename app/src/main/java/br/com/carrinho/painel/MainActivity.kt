@@ -173,6 +173,15 @@ class MainActivity : Activity() {
         conectar()
         // procura versao nova ao abrir (silencioso se nao houver / sem internet)
         Atualizador.verificar(this, silencioso = true) { avisa(it) }
+        // envia logs/backups para o GitHub ao abrir e a cada ENVIO_MIN minutos
+        status.post(envioPeriodico)
+    }
+
+    private val envioPeriodico = object : Runnable {
+        override fun run() {
+            if (Envio.token(this@MainActivity) != null) Envio.enviarTudo(this@MainActivity)
+            status.postDelayed(this, Config.ENVIO_MIN * 60_000)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -201,6 +210,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        status.removeCallbacks(envioPeriodico)
         desconectar()
         try { unregisterReceiver(usbReceiver) } catch (_: Exception) { }
         super.onDestroy()

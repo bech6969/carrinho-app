@@ -56,6 +56,7 @@ class RegistrosActivity : Activity() {
             botao("← Painel", "#2A2F36") { finish() },
             botao("Fazer backup agora", "#1A73E8") { fazerBackup() },
             botao("Compartilhar log de hoje", "#1E8E3E") { compartilhar(Registro.arquivoHoje()) },
+            botao("☁ Envio automático", "#B06000") { dialogoEnvio() },
             botao("Verificar atualização", "#8430CE") {
                 info.text = "Verificando atualização…"
                 Atualizador.verificar(this, silencioso = false) { info.text = it }
@@ -96,6 +97,32 @@ class RegistrosActivity : Activity() {
         raiz.addView(colunas, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f).apply { topMargin = dp(8) })
         setContentView(raiz)
         listarArquivos()
+    }
+
+    /** Configura o token do GitHub e envia logs/backups para o repositorio privado. */
+    private fun dialogoEnvio() {
+        val temToken = Envio.token(this) != null
+        val ed = android.widget.EditText(this).apply {
+            hint = if (temToken) "Token salvo (cole outro para trocar)" else "Cole aqui o token do GitHub (github_pat_…)"
+            setSingleLine()
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Envio automático de logs")
+            .setMessage("Os logs e backups vão para o repositório privado ${Config.REPO_LOGS}, " +
+                "ao abrir o app e a cada ${Config.ENVIO_MIN} min (só o que mudou, compactado).\n\n" +
+                "Status: ${Envio.ultimoStatus}")
+            .setView(ed)
+            .setPositiveButton(if (temToken) "Enviar agora" else "Salvar e enviar") { _, _ ->
+                val t = ed.text.toString().trim()
+                if (t.isNotEmpty()) Envio.setToken(this, t)
+                if (Envio.token(this) == null) { info.text = "Cole o token primeiro."; return@setPositiveButton }
+                info.text = "Enviando…"
+                Envio.enviarTudo(this) { r -> runOnUiThread { info.text = r } }
+            }
+            .setNeutralButton("Desligar") { _, _ -> Envio.setToken(this, null); info.text = Envio.ultimoStatus }
+            .setNegativeButton("Fechar", null)
+            .show()
     }
 
     override fun onResume() { super.onResume(); handler.post(atualizador) }
