@@ -34,6 +34,12 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".PerfisActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".RegistrosActivity"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />

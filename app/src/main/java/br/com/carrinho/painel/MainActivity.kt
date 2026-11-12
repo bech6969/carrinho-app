@@ -12,12 +12,15 @@ import android.graphics.drawable.GradientDrawable
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.widget.TextViewCompat
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
 import kotlin.math.abs
@@ -34,6 +37,12 @@ class MainActivity : Activity() {
     @Volatile private var marcha = Marcha.NEUTRO
     @Volatile private var modo = 1
     @Volatile private var modoPendente = -1
+    /** Perfil a aplicar no inversor (copia, lida pela thread de comunicacao). */
+    @Volatile private var perfilPendente: Perfil? = null
+    @Volatile private var nomeModo = ""
+    /** Ultimo perfil efetivamente gravado no inversor (para reaplicar se for editado). */
+    @Volatile private var perfilAplicado: Perfil? = null
+    private var perfis: MutableList<Perfil> = mutableListOf()
     @Volatile private var pedirReset = false
     @Volatile private var rodando = false
     @Volatile private var rpm = 0
@@ -56,7 +65,9 @@ class MainActivity : Activity() {
     private lateinit var bF: Button
     private lateinit var bN: Button
     private lateinit var bR: Button
-    private lateinit var bModos: Array<Button>
+    private lateinit var bSom: Button
+    private lateinit var modosBox: LinearLayout
+    private val bModos = mutableListOf<Button>()
 
     private val cinza = Color.parseColor("#2A2F36")
 
@@ -93,13 +104,22 @@ class MainActivity : Activity() {
         bF = findViewById(R.id.bF)
         bN = findViewById(R.id.bN)
         bR = findViewById(R.id.bR)
-        bModos = arrayOf(findViewById(R.id.m0), findViewById(R.id.m1), findViewById(R.id.m2))
-        Config.NOME_MODO.forEachIndexed { i, nome -> bModos[i].text = nome }
+        modosBox = findViewById(R.id.modos)
+        bSom = findViewById(R.id.som)
 
         bF.setOnClickListener { trocaMarcha(Marcha.FRENTE) }
         bN.setOnClickListener { trocaMarcha(Marcha.NEUTRO) }
         bR.setOnClickListener { trocaMarcha(Marcha.RE) }
-        bModos.forEachIndexed { i, b -> b.setOnClickListener { if (i != modo) modoPendente = i } }
+        bSom.setOnClickListener {
+            val novo = !SomMotor.habilitado(this)
+            SomMotor.setHabilitado(this, novo)
+            if (novo) SomMotor.iniciar() else SomMotor.parar()
+            atualizaBotoes()
+        }
+        findViewById<Button>(R.id.perfis).apply {
+            setOnClickListener { startActivity(Intent(this@MainActivity, PerfisActivity::class.java)) }
+            pinta(this, cinza)
+        }
         findViewById<Button>(R.id.log).apply {
             setOnClickListener { startActivity(Intent(this@MainActivity, RegistrosActivity::class.java)) }
             pinta(this, cinza)
@@ -116,6 +136,14 @@ class MainActivity : Activity() {
         pinta(reset, cinza)
 
         unid.text = if (Config.MOSTRAR_KMH) "km/h" else "rpm"
+        // Textos se ajustam ao tamanho de cada caixa (celular ou tablet)
+        autoTexto(status, 28); autoTexto(vel, 220); autoTexto(unid, 30)
+        autoTexto(findViewById(R.id.batTitulo), 24); autoTexto(batPct, 64)
+        autoTexto(vbatTxt, 28); autoTexto(corrTxt, 28); autoTexto(tempTxt, 28)
+        listOf(bF, bN, bR).forEach { autoTexto(it, 44) }
+        listOf(R.id.parar, R.id.reset, R.id.som, R.id.perfis, R.id.config, R.id.log)
+            .forEach { autoTexto(findViewById(it), if (it == R.id.parar) 34 else 22) }
+        montaModos()
         atualizaBotoes()
 
         val filtro = IntentFilter().apply {
@@ -138,11 +166,18 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         telaCheia()
+        // perfis podem ter sido editados na tela Perfis
+        montaModos()
+        val p = perfis.getOrNull(modo)
+        if (rodando && p != null && p != perfilAplicado) pedePerfil(modo)
+        atualizaBotoes()
+        if (SomMotor.habilitado(this)) SomMotor.iniciar()
     }
 
     /** App saiu da tela -> neutro por seguranca (a comunicacao continua para manter leituras). */
     override fun onPause() {
         super.onPause()
+        SomMotor.parar()
         if (marcha != Marcha.NEUTRO) Registro.evento("APP", "App saiu da tela - neutro automático")
         marcha = Marcha.NEUTRO
         atualizaBotoes()
@@ -186,6 +221,7 @@ class MainActivity : Activity() {
             Registro.evento("USB", "Adaptador conectado (${driver.javaClass.simpleName})")
             iniciaComunicacao(mb)
             if (!Backup.existe(this)) backupInicial(mb)
+            pedePerfil(modo)   // garante que o inversor esta com o perfil mostrado na tela
         } catch (e: Exception) {
             mostraStatus("Erro USB: ${e.message}", "#C5221F")
             desconectar()
@@ -294,7 +330,7 @@ class MainActivity : Activity() {
                     // ---- telemetria: 1 s andando, 10 s parado ----
                     val andando = abs(rpm) > 0
                     if (comOK && (if (andando) ciclo % 10 == 0 else ciclo % 100 == 0)) {
-                        Registro.dados(marcha.name, Config.NOME_MODO[modo], kmh, rpm, corrente, vbat,
+                        Registro.dados(marcha.name, nomeModo, kmh, rpm, corrente, vbat,
                             temp, torque, acelerador, estInv, estado, alarme, falhaAtual)
                     }
 
@@ -307,14 +343,20 @@ class MainActivity : Activity() {
                     if (pedirReset) { cmd = Config.CMD_RESET; pedirReset = false }
                     mb.writeSingle(Config.R_CONTROLE, cmd)
 
-                    // Modo de conducao: grava so quando muda
+                    // Perfil de conducao: grava (so na RAM) quando muda ou foi editado
                     val mp = modoPendente
-                    if (mp >= 0) {
-                        if (mb.writeSingle(Config.R_VELMAX, Config.VEL_MAX_MODO[mp])) {
-                            Registro.evento("MODO", "${Config.NOME_MODO[modo]} → ${Config.NOME_MODO[mp]} (P0134 = ${Config.VEL_MAX_MODO[mp]} rpm)")
-                            modo = mp
-                        } else { avisa("Falha ao trocar modo"); Registro.evento("ERRO", "Falha ao trocar modo para ${Config.NOME_MODO[mp]}") }
-                        modoPendente = -1
+                    val pp = perfilPendente
+                    if (mp >= 0 && pp != null) {
+                        val falhou = pp.valores.filter { (num, v) -> !mb.writeSingle(num, v) }.keys
+                        if (falhou.isEmpty()) {
+                            Registro.evento("MODO", "${nomeModo.ifEmpty { "?" }} → ${pp.nome} (${Perfis.resumo(pp)})")
+                            modo = mp; nomeModo = pp.nome; perfilAplicado = pp
+                            Perfis.setAtivo(this, mp)
+                        } else {
+                            avisa("Falha ao aplicar o perfil ${pp.nome}")
+                            Registro.evento("ERRO", "Falha ao aplicar perfil ${pp.nome}: P" + falhou.joinToString(", P"))
+                        }
+                        modoPendente = -1; perfilPendente = null
                     }
 
                     val r = rpm; val v = vbat; val c = corrente; val t = temp; val e = estado
@@ -345,6 +387,11 @@ class MainActivity : Activity() {
     }
 
     private fun atualizaTela(comOK: Boolean, rpm: Int, vbat: Double, corrente: Double, temp: Double, estado: Int) {
+        // som do motor: giro acompanha a rotacao do motor eletrico, carga acompanha a corrente
+        val velMax = (perfis.getOrNull(modo)?.valores?.get(Config.R_VELMAX) ?: 3500).coerceAtLeast(500)
+        SomMotor.rotacao = if (comOK) abs(rpm).toDouble() / velMax else 0.0
+        SomMotor.carga = if (comOK) abs(corrente) / 120.0 else 0.0
+
         vel.text = if (Config.MOSTRAR_KMH) Math.round(abs(kmh)).toString() else abs(rpm).toString()
 
         val pct = (((vbatFiltrada - Config.V_BAT_VAZIA) / (Config.V_BAT_CHEIA - Config.V_BAT_VAZIA)) * 100)
@@ -377,6 +424,40 @@ class MainActivity : Activity() {
         pinta(bN, if (marcha == Marcha.NEUTRO) Color.parseColor("#1A73E8") else cinza)
         pinta(bR, if (marcha == Marcha.RE) Color.parseColor("#E8710A") else cinza)
         bModos.forEachIndexed { i, b -> pinta(b, if (i == modo) Color.parseColor("#8430CE") else cinza) }
+        val somLigado = SomMotor.habilitado(this)
+        bSom.text = if (somLigado) "Som ON" else "Som OFF"
+        pinta(bSom, if (somLigado) Color.parseColor("#B06000") else cinza)
+    }
+
+    /** Cria um botao por perfil (ECO, NORMAL, SPORT e os criados pelo usuario). */
+    private fun montaModos() {
+        perfis = Perfis.carregar(this)
+        modo = Perfis.ativo(this).coerceIn(0, perfis.size - 1)
+        if (nomeModo.isEmpty()) nomeModo = perfis[modo].nome
+        modosBox.removeAllViews(); bModos.clear()
+        perfis.forEachIndexed { i, p ->
+            val b = Button(this).apply {
+                text = p.nome; isAllCaps = false; setTypeface(null, android.graphics.Typeface.BOLD)
+                setOnClickListener { if (i != modo || perfis[i] != perfilAplicado) pedePerfil(i) }
+            }
+            modosBox.addView(b, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
+                if (i > 0) marginStart = (6 * resources.displayMetrics.density).toInt()
+            })
+            autoTexto(b, 26)
+            bModos += b
+        }
+    }
+
+    private fun pedePerfil(i: Int) {
+        val p = perfis.getOrNull(i) ?: return
+        perfilPendente = p.copy(valores = p.valores.toMutableMap())
+        modoPendente = i
+        if (!rodando) { modo = i; Perfis.setAtivo(this, i); nomeModo = p.nome; atualizaBotoes() }
+    }
+
+    private fun autoTexto(t: TextView, maxSp: Int) {
+        t.maxLines = 1
+        TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(t, 8, maxSp, 1, TypedValue.COMPLEX_UNIT_SP)
     }
 
     private fun pinta(b: Button, cor: Int) {
