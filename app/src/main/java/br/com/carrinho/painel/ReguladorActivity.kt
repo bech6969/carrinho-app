@@ -49,6 +49,7 @@ class ReguladorActivity : Activity() {
     private var horarioSolta = true
     private var deuRe = false
     private var torqueMax = 0.0     // torque "motor" (mesmo sentido do giro) com pedal solto, apos 1 s
+    private var parouEm = -1.0      // s ate a rotacao cair abaixo de 20 rpm
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun f3(v: Int?) = v?.let { String.format(Locale.US, "%.3f", it / 1000.0).replace('.', ',') } ?: "?"
@@ -73,7 +74,7 @@ class ReguladorActivity : Activity() {
         lista.addView(texto(
             "Rodas suspensas, \"Comando: CHAVE\" no painel e chave em F. Para cada degrau: acelere forte (acima de 50%) " +
             "e solte o pedal de uma vez, 3 vezes. A tela mede sozinha. Os valores vão só para a RAM: se desligar " +
-            "o inversor, volta o que estava salvo.", 14f, "#BDC1C6"))
+            "o inversor, volta o que estava salvo. Para trocar de degrau, ponha a chave em N.", 14f, "#BDC1C6"))
         atualTxt = texto("Lendo P0161/P0162…", 18f, "#FFFFFF", true)
         lista.addView(atualTxt, lp(8))
 
@@ -131,7 +132,7 @@ class ReguladorActivity : Activity() {
     private fun gravar(v: Int, motivo: String) {
         val mb = Conexao.mb ?: run { info.text = "Sem conexão."; return }
         if (ocupado) return
-        if (!Conexao.parado) { info.text = "Pare o motor (rodas paradas) antes de mudar."; return }
+        if (!Conexao.parado) { info.text = "Ponha a chave em N e espere as rodas pararem para mudar o valor."; return }
         ocupado = true
         info.text = "Gravando P0162 = ${f3(v)}…"
         Thread {
@@ -151,7 +152,7 @@ class ReguladorActivity : Activity() {
 
     private fun salvarMemoria() {
         val mb = Conexao.mb ?: run { info.text = "Sem conexão."; return }
-        if (!Conexao.parado) { info.text = "Pare o motor antes."; return }
+        if (!Conexao.parado) { info.text = "Ponha a chave em N e espere as rodas pararem."; return }
         AlertDialog.Builder(this)
             .setTitle("Salvar P0162 = ${f3(p162)} na memória?")
             .setMessage("Grava P0303 = 1: o valor passa a valer depois de desligar o inversor.")
@@ -180,18 +181,20 @@ class ReguladorActivity : Activity() {
             if (ac >= 30) armado = true
             if (armado && ac <= 1.0 && rpm > 100) {         // soltou o pedal com o motor girando
                 emTeste = true; armado = false; t0 = System.currentTimeMillis()
-                rpmSolta = rpm; horarioSolta = horario; deuRe = false; torqueMax = 0.0
+                rpmSolta = rpm; horarioSolta = horario; deuRe = false; torqueMax = 0.0; parouEm = -1.0
             }
             return
         }
         val dt = (System.currentTimeMillis() - t0) / 1000.0
         if (ac > 5) { finaliza("pisou de novo antes de parar", dt); return }
-        if (horario != horarioSolta && rpm > 30) deuRe = true
-        // torque no mesmo sentido do giro com pedal solto = motor puxando sozinho
-        val tqMotor = if (horario == horarioSolta) (if (horarioSolta) tq else -tq) else 0.0
-        if (dt > 1.0 && rpm > 50 && tqMotor > torqueMax) torqueMax = tqMotor
+        // P0002 nao tem sinal: re = a rotacao chega perto de zero e volta a subir sem pedal
+        if (parouEm < 0 && rpm < 20 && dt > 0.3) parouEm = dt
+        if (parouEm >= 0 && rpm > 60) deuRe = true
+        // torque no mesmo sentido do giro com pedal solto (antes de parar) = motor puxando sozinho
+        val tqMotor = if (horarioSolta) tq else -tq
+        if (parouEm < 0 && dt > 1.0 && rpm > 50 && tqMotor > torqueMax) torqueMax = tqMotor
         when {
-            rpm < 20 && dt > 0.3 -> finaliza(null, dt)
+            parouEm >= 0 && dt - parouEm > 3 -> finaliza(null, parouEm)
             dt > 15 -> finaliza("NÃO PAROU em 15 s (andando sozinho)", dt)
         }
     }
@@ -200,7 +203,7 @@ class ReguladorActivity : Activity() {
         emTeste = false
         val veredito = when {
             obs != null -> obs
-            deuRe -> "DEU RÉ"
+            deuRe -> "DEU RÉ (voltou a girar depois de parar)"
             torqueMax > 5 -> "parou, mas com torque preso"
             else -> "OK"
         }
