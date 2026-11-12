@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0D0F12"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#1B1F24"
+        android:gravity="center"
+        android:padding="10dp"
+        android:text="Conecte o adaptador USB-RS485"
+        android:textColor="#FFFFFF"
+        android:textSize="22sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="12dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <!-- Velocidade -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1.4"
+            android:background="#1B1F24"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/vel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textColor="#E8EAED"
+                android:textSize="120sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/unid"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="rpm"
+                android:textColor="#9AA0A6"
+                android:textSize="22sp" />
+        </LinearLayout>
+
+        <!-- Bateria -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:background="#1B1F24"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:padding="18dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Bateria"
+                android:textColor="#9AA0A6"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/batPct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="--%"
+                android:textColor="#E8EAED"
+                android:textSize="44sp"
+                android:textStyle="bold" />
+
+            <ProgressBar
+                android:id="@+id/batBar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="28dp"
+                android:layout_marginTop="6dp"
+                android:max="100"
+                android:progress="0" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/vbat"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="-- V"
+                    android:textColor="#E8EAED"
+                    android:textSize="20sp" />
+
+                <TextView
+                    android:id="@+id/corr"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="-- A"
+                    android:textColor="#E8EAED"
+                    android:textSize="20sp" />
+
+                <TextView
+                    android:id="@+id/temp"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="end"
+                    android:text="-- °C"
+                    android:textColor="#E8EAED"
+                    android:textSize="20sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Marchas -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal">
+
+        <Button android:id="@+id/bF" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:text="F" android:textSize="32sp" android:textStyle="bold" />
+        <Button android:id="@+id/bN" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_marginStart="12dp" android:layout_weight="1" android:text="N"
+            android:textSize="32sp" android:textStyle="bold" />
+        <Button android:id="@+id/bR" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_marginStart="12dp" android:layout_weight="1" android:text="R"
+            android:textSize="32sp" android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Modos -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal">
+
+        <Button android:id="@+id/m0" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:text="ECO" android:textSize="22sp" android:textStyle="bold" />
+        <Button android:id="@+id/m1" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_marginStart="12dp" android:layout_weight="1" android:text="NORMAL"
+            android:textSize="22sp" android:textStyle="bold" />
+        <Button android:id="@+id/m2" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_marginStart="12dp" android:layout_weight="1" android:text="SPORT"
+            android:textSize="22sp" android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Parar / Reset -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal">
+
+        <Button android:id="@+id/parar" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="3" android:text="PARAR" android:textSize="28sp" android:textStyle="bold" />
+        <Button android:id="@+id/reset" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_marginStart="12dp" android:layout_weight="1" android:text="Reset falha"
+            android:textSize="18sp" />
+        <Button android:id="@+id/config" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_marginStart="12dp" android:layout_weight="1" android:text="⚙ Config."
+            android:textSize="18sp" />
+        <Button android:id="@+id/log" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_marginStart="12dp" android:layout_weight="1" android:text="📋 Log/Backup"
+            android:textSize="18sp" />
+    </LinearLayout>
+</LinearLayout>

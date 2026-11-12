@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'br.com.carrinho.painel'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'br.com.carrinho.painel'
+        minSdk 21
+        targetSdk 34
+        // numero do build do GitHub Actions = versao (o atualizador compara este numero)
+        def build = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as Integer
+        versionCode build
+        versionName "1.$build"
+    }
+    // Assinatura fixa: precisa ser sempre a mesma chave para o Android aceitar atualizar por cima.
+    // No GitHub vem do secret KEYSTORE_B64 (ver HANDOFF.md). Local: secrets/carrinho.jks
+    def ks = file(System.getenv('KEYSTORE_FILE') ?: "${rootDir}/secrets/carrinho.jks")
+    signingConfigs {
+        fixa {
+            storeFile ks
+            storePassword System.getenv('KEYSTORE_PASS') ?: ''
+            keyAlias 'carrinho'
+            keyPassword System.getenv('KEYSTORE_PASS') ?: ''
+        }
+    }
+    buildTypes {
+        debug { if (ks.exists()) signingConfig signingConfigs.fixa }
+        release { minifyEnabled false }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+}
+
+dependencies {
+    implementation 'com.github.mik3y:usb-serial-for-android:3.8.0'
+    implementation 'androidx.core:core:1.13.1'
+}
