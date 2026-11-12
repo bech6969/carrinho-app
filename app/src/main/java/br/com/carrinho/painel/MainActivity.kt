@@ -51,7 +51,18 @@ class MainActivity : Activity() {
 
     private var port: UsbSerialPort? = null
     private var worker: Thread? = null
-    private var vbatFiltrada = 0.0
+    private val bateria = Bateria()
+    @Volatile private var cargaPct = -1
+    @Volatile private var kmhBruto = 0.0
+    @Volatile private var fatorVel = Config.FATOR_VEL_PADRAO
+
+    /** true = F/N/R pelo app; false = chave fisica do carrinho (padrao ao abrir, por seguranca). */
+    @Volatile private var comandoApp = false
+    /** O app comanda na situacao REMOTO (true) ou LOCAL (false); descoberto lendo P0223..P0227. */
+    @Volatile private var appEmRemoto = false
+    /** null = ainda nao conferido; true = inversor configurado para aceitar F/N/R do app. */
+    @Volatile private var configComandoOK: Boolean? = null
+    private lateinit var bCmd: Button
 
     private lateinit var usb: UsbManager
     private lateinit var status: TextView
@@ -106,6 +117,10 @@ class MainActivity : Activity() {
         bR = findViewById(R.id.bR)
         modosBox = findViewById(R.id.modos)
         bSom = findViewById(R.id.som)
+        bCmd = findViewById(R.id.cmd)
+        bCmd.setOnClickListener { alternaComando() }
+        fatorVel = getSharedPreferences("app", Context.MODE_PRIVATE).getFloat("fator_vel", Config.FATOR_VEL_PADRAO.toFloat()).toDouble()
+        vel.setOnLongClickListener { calibrarVelocidade(); true }
 
         bF.setOnClickListener { trocaMarcha(Marcha.FRENTE) }
         bN.setOnClickListener { trocaMarcha(Marcha.NEUTRO) }
@@ -141,6 +156,7 @@ class MainActivity : Activity() {
         autoTexto(findViewById(R.id.batTitulo), 24); autoTexto(batPct, 64)
         autoTexto(vbatTxt, 28); autoTexto(corrTxt, 28); autoTexto(tempTxt, 28)
         listOf(bF, bN, bR).forEach { autoTexto(it, 44) }
+        autoTexto(bCmd, 22)
         listOf(R.id.parar, R.id.reset, R.id.som, R.id.perfis, R.id.config, R.id.log)
             .forEach { autoTexto(findViewById(it), if (it == R.id.parar) 34 else 22) }
         montaModos()
@@ -221,6 +237,8 @@ class MainActivity : Activity() {
             Registro.evento("USB", "Adaptador conectado (${driver.javaClass.simpleName})")
             iniciaComunicacao(mb)
             if (!Backup.existe(this)) backupInicial(mb)
+            comandoApp = false; configComandoOK = null
+            conferirComando(mb, mostrarDialogo = false)
             pedePerfil(modo)   // garante que o inversor esta com o perfil mostrado na tela
         } catch (e: Exception) {
             mostraStatus("Erro USB: ${e.message}", "#C5221F")
@@ -280,10 +298,11 @@ class MainActivity : Activity() {
                         rpm = base[0].toShort().toInt()
                         corrente = base[1].toShort() / 10.0
                         vbat = base[2] / 10.0
-                        kmh = base[Config.R_KMH - Config.R_RPM] / 10.0
+                        kmhBruto = base[Config.R_KMH - Config.R_RPM] / 10.0
+                        kmh = kmhBruto * fatorVel
                         estInv = base[4]
                         torque = base[7].toShort() / 10.0
-                        vbatFiltrada = if (vbatFiltrada == 0.0) vbat else vbatFiltrada * 0.98 + vbat * 0.02
+                        cargaPct = bateria.atualizar(vbat, corrente, Config.CICLO_MS / 1000.0)
                         mb.readHolding(Config.R_TEMP, 1)?.let { temp = it[0].toShort() / 10.0 }
                         mb.readHolding(Config.R_ESTADO, 1)?.let { estado = it[0] }
                         // a cada 1 s: acelerador, alarme e falha atuais (para o log)
@@ -335,12 +354,16 @@ class MainActivity : Activity() {
                     }
 
                     // Palavra de controle (escrita periodica alimenta o watchdog P0314)
-                    var cmd = when (marcha) {
+                    // Bit 4 (Remoto) escolhe quem comanda: o app ou a chave fisica do carrinho
+                    val bitApp = if (appEmRemoto) Config.CMD_REMOTO else 0
+                    val bitChave = if (appEmRemoto) 0 else Config.CMD_REMOTO
+                    if (!comandoApp && marcha != Marcha.NEUTRO) marcha = Marcha.NEUTRO
+                    var cmd = if (!comandoApp) bitChave else bitApp or when (marcha) {
                         Marcha.FRENTE -> Config.CMD_FRENTE
                         Marcha.RE -> Config.CMD_RE
                         Marcha.NEUTRO -> Config.CMD_NEUTRO
                     }
-                    if (pedirReset) { cmd = Config.CMD_RESET; pedirReset = false }
+                    if (pedirReset) { cmd = Config.CMD_RESET or (if (comandoApp) bitApp else bitChave); pedirReset = false }
                     mb.writeSingle(Config.R_CONTROLE, cmd)
 
                     // Perfil de conducao: grava (so na RAM) quando muda ou foi editado
@@ -375,8 +398,123 @@ class MainActivity : Activity() {
 
     // ---------------- Interface ----------------
 
+    // ---------------- Comando pelo app x chave fisica ----------------
+
+    /** Le P0220..P0227 e descobre se o inversor aceita F/N/R pela serial. */
+    private fun conferirComando(mb: ModbusRtu, mostrarDialogo: Boolean) {
+        Thread {
+            fun le(n: Int) = mb.readHolding(n, 1)?.get(0)
+            val p220 = le(220); val p223 = le(223); val p224 = le(224)
+            val p226 = le(226); val p227 = le(227); val p313 = le(313); val p314 = le(314)
+            if (p220 == null || p223 == null || p224 == null || p226 == null || p227 == null) {
+                Registro.evento("COMANDO", "Não foi possível ler P0220..P0227")
+                return@Thread
+            }
+            val appLoc = p223 in 5..6 && p224 == 2
+            val appRem = p226 in 5..6 && p227 == 2
+            val ok = p220 in 5..6 && (appLoc != appRem)
+            appEmRemoto = appRem
+            configComandoOK = ok
+            val resumo = "P0220=$p220  P0223=$p223  P0224=$p224  P0226=$p226  P0227=$p227  P0313=$p313  P0314=${p314?.let { it / 10.0 }}"
+            Registro.evento("COMANDO", (if (ok) "Inversor aceita F/N/R do app" else "Inversor NÃO aceita F/N/R do app") + " ($resumo)")
+            if (!ok && mostrarDialogo) runOnUiThread { dialogoConfigurar(resumo) }
+        }.start()
+    }
+
+    private fun dialogoConfigurar(resumo: String) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("O inversor não aceita F/N/R do app")
+            .setMessage("Hoje o F/N/R vem só da chave do carrinho.\n\n$resumo\n\n" +
+                "\"Configurar\" deixa a chave do carrinho funcionando como hoje e libera o app numa segunda situação " +
+                "(LOCAL/REMOTO), escolhida pelo botão \"Comando\" do painel:\n" +
+                "• P0220 = Serial/USB (o inversor liga sempre na chave do carrinho)\n" +
+                "• fonte de giro e de gira/para do app = Serial/USB\n" +
+                "• P0313 = Para por rampa e P0314 = 0,5 s, se estiverem desligados\n\n" +
+                "Grava na memória (P0303). Faça com o carrinho parado e a chave em N.")
+            .setPositiveButton("Configurar") { _, _ -> configurarComando() }
+            .setNegativeButton("Agora não", null)
+            .show()
+    }
+
+    private fun configurarComando() {
+        val mb = Conexao.mb ?: return avisa("Sem conexão com o inversor")
+        if (!Conexao.parado) return avisa("Pare o carrinho antes")
+        Thread {
+            fun le(n: Int) = mb.readHolding(n, 1)?.get(0)
+            val p223 = le(223); val p224 = le(224)
+            // Se a chave do carrinho esta na situacao LOCAL (DIx), o app fica no REMOTO; senao o app fica no LOCAL.
+            val chaveNoLocal = p223 == 4 && p224 == 1
+            val escrever = mutableListOf<Pair<Int, Int>>()
+            if (chaveNoLocal) escrever += listOf(220 to 5, 226 to 5, 227 to 2)
+            else escrever += listOf(220 to 6, 223 to 5, 224 to 2)
+            if (le(313) == 0) escrever += 313 to 1
+            if (le(314) == 0) escrever += 314 to 5
+            mb.writeSingle(0, Config.SENHA_P0000)
+            val falhas = escrever.filter { (n, v) -> !(mb.writeSingle(n, v) && le(n) == v) }
+            val gravou = falhas.isEmpty() && mb.writeSingle(303, 1)
+            Registro.evento("COMANDO", "Configuração do comando pelo app: " +
+                escrever.joinToString { (n, v) -> "P%04d=%d".format(n, v) } +
+                if (falhas.isEmpty()) (if (gravou) " (gravado P0303)" else " (FALHOU P0303)")
+                else " — FALHOU: " + falhas.joinToString { "P%04d".format(it.first) })
+            runOnUiThread {
+                if (falhas.isEmpty()) avisa("Pronto. Toque em \"Comando\" para usar o F/N/R do app.")
+                else android.app.AlertDialog.Builder(this)
+                    .setTitle("Não foi possível configurar")
+                    .setMessage("Falhou: " + falhas.joinToString { "P%04d".format(it.first) } +
+                        "\n\nConfira a senha (P0000 = ${Config.SENHA_P0000} no Config.kt) e se o inversor está parado.")
+                    .setPositiveButton("OK", null).show()
+            }
+            conferirComando(mb, mostrarDialogo = false)
+        }.start()
+    }
+
+    private fun alternaComando() {
+        if (!rodando) { avisa("Sem conexão com o inversor"); return }
+        val mb = Conexao.mb ?: return
+        when (configComandoOK) {
+            null -> { avisa("Conferindo configuração do inversor…"); conferirComando(mb, true); return }
+            false -> { conferirComando(mb, true); return }
+            true -> {}
+        }
+        if (!Conexao.parado) { avisa("Pare o carrinho antes de trocar o comando"); return }
+        marcha = Marcha.NEUTRO
+        comandoApp = !comandoApp
+        Registro.evento("COMANDO", if (comandoApp) "F/N/R pelo APP" else "F/N/R pela CHAVE do carrinho")
+        if (comandoApp) avisa("Comando pelo app. Deixe a chave do carrinho em N.")
+        atualizaBotoes()
+    }
+
+    /** Toque longo na velocidade: corrige com a velocidade real (GPS). */
+    private fun calibrarVelocidade() {
+        val ed = android.widget.EditText(this).apply {
+            hint = "km/h real agora"; inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Corrigir velocidade")
+            .setMessage("Fator atual: ${"%.3f".format(fatorVel)}\nInversor (P0008): ${"%.1f".format(abs(kmhBruto))} km/h\n\n" +
+                "Ande em velocidade constante e digite a velocidade do GPS. Ou digite o fator direto (ex.: 0,5) com o carrinho parado.")
+            .setView(ed)
+            .setPositiveButton("Aplicar") { _, _ ->
+                val x = ed.text.toString().replace(',', '.').toDoubleOrNull() ?: return@setPositiveButton
+                val novo = if (abs(kmhBruto) > 3) x / abs(kmhBruto) else x
+                if (novo in 0.05..5.0) {
+                    fatorVel = novo
+                    getSharedPreferences("app", Context.MODE_PRIVATE).edit().putFloat("fator_vel", novo.toFloat()).apply()
+                    Registro.evento("VELOCIDADE", "Fator de correção = ${"%.3f".format(novo)}")
+                    avisa("Fator = ${"%.3f".format(novo)}")
+                } else avisa("Valor fora da faixa")
+            }
+            .setNeutralButton("Voltar ao padrão") { _, _ ->
+                fatorVel = Config.FATOR_VEL_PADRAO
+                getSharedPreferences("app", Context.MODE_PRIVATE).edit().remove("fator_vel").apply()
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
     private fun trocaMarcha(nova: Marcha) {
         if (!rodando) { avisa("Sem conexão com o inversor"); return }
+        if (!comandoApp && nova != Marcha.NEUTRO) { avisa("O F/N/R está na chave do carrinho. Toque em \"Comando\" para passar ao app."); return }
         if (nova == Marcha.NEUTRO || nova == marcha || abs(rpm) <= Config.RPM_TROCA_MAX) {
             marcha = nova
             atualizaBotoes()
@@ -394,9 +532,8 @@ class MainActivity : Activity() {
 
         vel.text = if (Config.MOSTRAR_KMH) Math.round(abs(kmh)).toString() else abs(rpm).toString()
 
-        val pct = (((vbatFiltrada - Config.V_BAT_VAZIA) / (Config.V_BAT_CHEIA - Config.V_BAT_VAZIA)) * 100)
-            .toInt().coerceIn(0, 100)
-        batPct.text = "$pct%"
+        val pct = cargaPct.coerceIn(0, 100)
+        batPct.text = if (cargaPct < 0) "--%" else "$pct%"
         batBar.progress = pct
         batBar.progressTintList = ColorStateList.valueOf(
             Color.parseColor(if (pct < 20) "#D93025" else if (pct < 40) "#F9AB00" else "#34C759")
@@ -424,6 +561,10 @@ class MainActivity : Activity() {
         pinta(bN, if (marcha == Marcha.NEUTRO) Color.parseColor("#1A73E8") else cinza)
         pinta(bR, if (marcha == Marcha.RE) Color.parseColor("#E8710A") else cinza)
         bModos.forEachIndexed { i, b -> pinta(b, if (i == modo) Color.parseColor("#8430CE") else cinza) }
+        listOf(bF, bN, bR).forEach { it.alpha = if (comandoApp) 1f else 0.35f }
+        bCmd.text = if (comandoApp) "Comando:\nAPP" else "Comando:\nCHAVE"
+        bCmd.maxLines = 2
+        pinta(bCmd, if (comandoApp) Color.parseColor("#1A73E8") else cinza)
         val somLigado = SomMotor.habilitado(this)
         bSom.text = if (somLigado) "Som ON" else "Som OFF"
         pinta(bSom, if (somLigado) Color.parseColor("#B06000") else cinza)

@@ -148,6 +148,8 @@
         android:layout_weight="1.6"
         android:orientation="horizontal">
 
+        <Button android:id="@+id/cmd" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_marginEnd="6dp" android:layout_weight="0.9" android:text="Comando" />
         <Button android:id="@+id/bF" android:layout_width="0dp" android:layout_height="match_parent"
             android:layout_weight="1" android:text="F" android:textStyle="bold" />
         <Button android:id="@+id/bN" android:layout_width="0dp" android:layout_height="match_parent"

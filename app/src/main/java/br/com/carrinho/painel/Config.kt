@@ -17,8 +17,16 @@ object Config {
     const val MOSTRAR_KMH = true
     /** Senha gravada em P0000 antes de alterar parametros (padrao WEG costuma ser 5). */
     const val SENHA_P0000 = 5
-    const val V_BAT_VAZIA = 46.0   // tensao = 0%   (48V chumbo-acido; ajuste para sua bateria)
-    const val V_BAT_CHEIA = 51.0   // tensao = 100%
+    /** Tensao de REPOUSO -> % (48 V chumbo-acido, 24 celulas). Para litio, troque a tabela. */
+    val TABELA_BAT = listOf(
+        45.4 to 0, 46.0 to 10, 46.6 to 20, 47.2 to 30, 47.8 to 40, 48.4 to 50,
+        49.0 to 60, 49.5 to 70, 50.0 to 80, 50.5 to 90, 50.9 to 100
+    )
+    /** Resistencia interna inicial (ohm); o app ajusta sozinho com o uso (Bateria.kt). */
+    const val R_BAT_INICIAL = 0.03
+    /** Correcao da velocidade (P0008). Medido no GPS: o inversor mostrava o dobro -> 0,5.
+     *  Pode ser recalibrado no app: toque longo no numero da velocidade. */
+    const val FATOR_VEL_PADRAO = 0.5
     const val RPM_TROCA_MAX = 50   // so troca F/R abaixo dessa rotacao
     const val FALHAS_P_NEUTRO = 5  // ciclos sem resposta -> neutro
     const val CICLO_MS = 100L      // periodo de leitura/escrita (alimenta watchdog P0314)
@@ -43,4 +51,5 @@ object Config {
     const val CMD_RE = 0x0003      // habilita rampa + geral, anti-horario
     const val CMD_NEUTRO = 0x0000
     const val CMD_RESET = 0x0080
+    const val CMD_REMOTO = 0x0010  // bit 4: situacao REMOTO (vale com P0220 = 5 ou 6)
 }
