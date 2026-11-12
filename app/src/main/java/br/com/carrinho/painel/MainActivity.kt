@@ -53,6 +53,7 @@ class MainActivity : Activity() {
     private var worker: Thread? = null
     private val bateria = Bateria()
     @Volatile private var cargaPct = -1
+    @Volatile private var taxaErro = 0.0
     @Volatile private var kmhBruto = 0.0
     @Volatile private var fatorVel = Config.FATOR_VEL_PADRAO
 
@@ -284,6 +285,8 @@ class MainActivity : Activity() {
             var ultFalha = 0; var ultAlarme = 0; var ultEstado = -1
             var acelerador = 0.0; var alarme = 0; var falhaAtual = 0
             var marchaAnterior = marcha
+            var ultTemp = 0.0; var ultEstadoLogico = 0
+            var tentAnt = 0L; var errosAnt = 0L
             while (rodando) {
                 ciclo++
                 val inicio = System.currentTimeMillis()
@@ -303,10 +306,11 @@ class MainActivity : Activity() {
                         estInv = base[4]
                         torque = base[7].toShort() / 10.0
                         cargaPct = bateria.atualizar(vbat, corrente, Config.CICLO_MS / 1000.0)
-                        mb.readHolding(Config.R_TEMP, 1)?.let { temp = it[0].toShort() / 10.0 }
-                        mb.readHolding(Config.R_ESTADO, 1)?.let { estado = it[0] }
-                        // a cada 1 s: acelerador, alarme e falha atuais (para o log)
+                        mb.readHolding(Config.R_ESTADO, 1)?.let { ultEstadoLogico = it[0] }
+                        estado = ultEstadoLogico; temp = ultTemp
+                        // a cada 1 s: temperatura, acelerador, alarme e falha (menos trafego no barramento)
                         if (ciclo % 10 == 0) {
+                            mb.readHolding(Config.R_TEMP, 1)?.let { ultTemp = it[0].toShort() / 10.0 }
                             mb.readHolding(18, 1)?.let { acelerador = it[0].toShort() / 100.0 }
                             mb.readHolding(48, 2)?.let { alarme = it[0]; falhaAtual = it[1] }
                         }
@@ -382,11 +386,26 @@ class MainActivity : Activity() {
                         modoPendente = -1; perfilPendente = null
                     }
 
-                    val r = rpm; val v = vbat; val c = corrente; val t = temp; val e = estado
-                    runOnUiThread { atualizaTela(comOK, r, v, c, t, e) }
+                    // qualidade da comunicacao nos ultimos ~5 s (repeticoes contam como erro)
+                    if (ciclo % 50 == 0) {
+                        val dt = mb.tentativas - tentAnt; val de = mb.erros - errosAnt
+                        taxaErro = if (dt > 0) de * 100.0 / dt else 0.0
+                        if (taxaErro >= 5) Registro.evento("COMUNICACAO", "Erros em %.0f%% dos quadros (timeout %d, CRC %d no total)"
+                            .format(taxaErro, mb.errosTimeout, mb.errosCrc))
+                        tentAnt = mb.tentativas; errosAnt = mb.erros
+                    }
+
+                    // uma leitura perdida nao pisca a tela: so mostra "sem comunicacao" apos 3 seguidas
+                    if (comOK || falhas >= 3) {
+                        val r = rpm; val v = vbat; val c = corrente; val t = ultTemp; val e = estado
+                        runOnUiThread { atualizaTela(comOK, r, v, c, t, e) }
+                    }
                 } catch (ex: Exception) {
-                    Registro.evento("ERRO", "Erro de comunicação USB: ${ex.message}")
-                    runOnUiThread { mostraStatus("Erro de comunicação: ${ex.message}", "#C5221F") }
+                    Registro.evento("ERRO", "Erro de comunicação USB: ${ex.message} - reconectando")
+                    runOnUiThread {
+                        mostraStatus("Erro USB, reconectando…", "#C5221F")
+                        status.postDelayed({ conectar() }, 2000)
+                    }
                     desconectar()
                     break
                 }
@@ -550,8 +569,8 @@ class MainActivity : Activity() {
             estado and (1 shl 15) != 0 -> mostraStatus("FALHA", "#C5221F")
             estado and (1 shl 7) != 0 -> mostraStatus("ALARME", "#F9AB00", escuro = true)
             estado and (1 shl 13) != 0 -> mostraStatus("SUBTENSÃO", "#F9AB00", escuro = true)
-            estado and (1 shl 8) != 0 -> mostraStatus("GIRANDO", "#1E8E3E")
-            else -> mostraStatus("PRONTO", "#1B1F24")
+            estado and (1 shl 8) != 0 -> mostraStatus("GIRANDO" + if (taxaErro >= 1) "  ·  erros %.0f%%".format(taxaErro) else "", "#1E8E3E")
+            else -> mostraStatus("PRONTO" + if (taxaErro >= 1) "  ·  erros %.0f%%".format(taxaErro) else "", "#1B1F24")
         }
         atualizaBotoes()
     }

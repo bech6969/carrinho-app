@@ -33,7 +33,25 @@ class ModbusRtu(private val port: UsbSerialPort, private val slave: Int) {
         return transact(pdu, 8) != null
     }
 
+    /** Estatistica para diagnostico: tentativas e falhas (cada tentativa = um quadro enviado). */
+    @Volatile var tentativas = 0L; private set
+    @Volatile var erros = 0L; private set
+    @Volatile var errosTimeout = 0L; private set
+    @Volatile var errosCrc = 0L; private set
+
+    /** Uma repeticao automatica: um quadro perdido por ruido nao vira "sem comunicacao". */
     private fun transact(pdu: ByteArray, expected: Int): ByteArray? {
+        repeat(2) {
+            tentativas++
+            val r = transact1(pdu, expected)
+            if (r != null) return r
+            erros++
+            try { Thread.sleep(5) } catch (_: InterruptedException) { return null }
+        }
+        return null
+    }
+
+    private fun transact1(pdu: ByteArray, expected: Int): ByteArray? {
         val crc = crc16(pdu, pdu.size)
         val frame = pdu + byteArrayOf((crc and 0xFF).toByte(), (crc shr 8).toByte())
 
@@ -53,12 +71,13 @@ class ModbusRtu(private val port: UsbSerialPort, private val slave: Int) {
                 if (n >= 5 && (buf[1].toInt() and 0x80) != 0) return null // resposta de excecao
             }
         }
-        if (n < expected) return null
-        if ((buf[0].toInt() and 0xFF) != slave) return null
+        if (n < expected) { errosTimeout++; return null }
+        if ((buf[0].toInt() and 0xFF) != slave) { errosCrc++; return null }
 
         val c = crc16(buf, expected - 2)
         val ok = (buf[expected - 2].toInt() and 0xFF) == (c and 0xFF) &&
                  (buf[expected - 1].toInt() and 0xFF) == ((c shr 8) and 0xFF)
+        if (!ok) errosCrc++
         return if (ok) buf.copyOf(expected) else null
     }
 
