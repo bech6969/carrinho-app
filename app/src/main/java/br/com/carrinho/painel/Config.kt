@@ -33,6 +33,8 @@ object Config {
     const val FATOR_VEL_PADRAO = 0.5
     const val RPM_TROCA_MAX = 50   // so troca F/R abaixo dessa rotacao
     const val FALHAS_P_NEUTRO = 5  // ciclos sem resposta -> neutro
+    /** Diagnostico: telemetria a 5 Hz andando (e acelerador a cada ciclo). Gera ~2 MB/hora. */
+    const val LOG_RAPIDO = true
     const val CICLO_MS = 100L      // periodo de leitura/escrita (alimenta watchdog P0314)
 
     // ---- Modos de conducao: velocidade maxima (rpm) gravada em P0134 ----

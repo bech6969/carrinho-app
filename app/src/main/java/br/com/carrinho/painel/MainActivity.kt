@@ -302,13 +302,18 @@ class MainActivity : Activity() {
                 val inicio = System.currentTimeMillis()
                 try {
                     // P0002..P0009 em um bloco: rpm, corrente, Vbat, freq, estado, Vout, km/h, torque
-                    val base = mb.readHolding(Config.R_RPM, 8)
+                    // P0001..P0009: referencia, rpm, corrente, Vbat, freq, estado, Vout, km/h, torque
+                    val b9 = mb.readHolding(1, 9)
+                    val base = b9?.copyOfRange(1, 9)
+                    var refRpm = 0; var freq = 0.0
                     val comOK = base != null
                     var corrente = 0.0; var vbat = 0.0; var temp = 0.0; var estado = 0
                     var torque = 0.0; var estInv = 0
 
                     if (base != null) {
                         rpm = base[0].toShort().toInt()
+                        refRpm = b9!![0].toShort().toInt()
+                        freq = base[3] / 10.0
                         corrente = base[1].toShort() / 10.0
                         vbat = base[2] / 10.0
                         kmhBruto = base[Config.R_KMH - Config.R_RPM] / 10.0
@@ -319,6 +324,9 @@ class MainActivity : Activity() {
                         mb.readHolding(Config.R_ESTADO, 1)?.let { ultEstadoLogico = it[0] }
                         estado = ultEstadoLogico; temp = ultTemp
                         // a cada 1 s: temperatura, acelerador, alarme e falha (menos trafego no barramento)
+                        // acelerador a cada ciclo quando ha movimento/pedal (diagnostico de pedal rapido)
+                        if (Config.LOG_RAPIDO && (abs(rpm) > 0 || acelerador != 0.0) && ciclo % 10 != 0)
+                            mb.readHolding(18, 1)?.let { acelerador = it[0].toShort() / 100.0 }
                         if (ciclo % 10 == 0) {
                             mb.readHolding(Config.R_TEMP, 1)?.let { ultTemp = it[0].toShort() / 10.0 }
                             mb.readHolding(18, 1)?.let { acelerador = it[0].toShort() / 100.0 }
@@ -362,9 +370,10 @@ class MainActivity : Activity() {
 
                     // ---- telemetria: 1 s andando, 10 s parado ----
                     val andando = abs(rpm) > 0
-                    if (comOK && (if (andando) ciclo % 10 == 0 else ciclo % 100 == 0)) {
+                    val passo = if (andando) (if (Config.LOG_RAPIDO) 2 else 10) else 100
+                    if (comOK && ciclo % passo == 0) {
                         Registro.dados(marcha.name, nomeModo, kmh, rpm, corrente, vbat,
-                            temp, torque, acelerador, estInv, estado, alarme, falhaAtual)
+                            temp, torque, acelerador, estInv, estado, alarme, falhaAtual, refRpm, freq)
                     }
 
                     // Palavra de controle (escrita periodica alimenta o watchdog P0314)

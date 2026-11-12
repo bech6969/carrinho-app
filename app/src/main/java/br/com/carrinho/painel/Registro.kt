@@ -17,7 +17,7 @@ import java.util.concurrent.Executors
 object Registro {
     private const val MAX_DIAS = 60
     private const val CABECALHO =
-        "data_hora;tipo;marcha;modo;kmh;rpm;corrente_A;bateria_V;temp_mosfet_C;torque_pct;acelerador_pct;estado_P0006;P0680_hex;alarme;falha;descricao"
+        "data_hora;tipo;marcha;modo;kmh;rpm;corrente_A;bateria_V;temp_mosfet_C;torque_pct;acelerador_pct;estado_P0006;P0680_hex;alarme;falha;ref_rpm;freq_Hz;descricao"
 
     private val exec = Executors.newSingleThreadExecutor()
     private val fmtData = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -28,7 +28,7 @@ object Registro {
     val recentes = ArrayDeque<String>()
 
     /** Ultima telemetria conhecida (preenche as colunas dos eventos). */
-    @Volatile var ultimaLinhaDados: String = ";;;;;;;;;;;;"
+    @Volatile var ultimaLinhaDados: String = ";;;;;;;;;;;;;;"
 
     fun iniciar(ctx: Context) {
         if (::pasta.isInitialized) return
@@ -51,10 +51,10 @@ object Registro {
 
     fun dados(marcha: String, modo: String, kmh: Double, rpm: Int, corrente: Double, vbat: Double,
               temp: Double, torque: Double, acelerador: Double, estado: Int, logico: Int,
-              alarme: Int, falha: Int) {
+              alarme: Int, falha: Int, refRpm: Int = 0, freq: Double = 0.0) {
         val linha = String.format(Locale.US,
-            "%s;%s;%.1f;%d;%.1f;%.1f;%.1f;%.1f;%.2f;%d;%04X;%d;%d",
-            marcha, modo, kmh, rpm, corrente, vbat, temp, torque, acelerador, estado, logico, alarme, falha)
+            "%s;%s;%.1f;%d;%.1f;%.1f;%.1f;%.1f;%.2f;%d;%04X;%d;%d;%d;%.1f",
+            marcha, modo, kmh, rpm, corrente, vbat, temp, torque, acelerador, estado, logico, alarme, falha, refRpm, freq)
         ultimaLinhaDados = linha
         escreve(Date(), "DADOS", linha, "")
     }
