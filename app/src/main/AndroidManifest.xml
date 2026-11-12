@@ -40,6 +40,11 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".DiagnosticoActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
             android:name=".RegistrosActivity"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />

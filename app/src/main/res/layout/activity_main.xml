@@ -187,6 +187,8 @@
             android:layout_marginStart="6dp" android:layout_weight="1" android:text="Perfis" />
         <Button android:id="@+id/config" android:layout_width="0dp" android:layout_height="match_parent"
             android:layout_marginStart="6dp" android:layout_weight="1" android:text="Config." />
+        <Button android:id="@+id/diag" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_marginStart="6dp" android:layout_weight="1" android:text="Diag." />
         <Button android:id="@+id/log" android:layout_width="0dp" android:layout_height="match_parent"
             android:layout_marginStart="6dp" android:layout_weight="1" android:text="Log" />
     </LinearLayout>

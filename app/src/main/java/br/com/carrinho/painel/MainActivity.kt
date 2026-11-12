@@ -136,6 +136,10 @@ class MainActivity : Activity() {
             setOnClickListener { startActivity(Intent(this@MainActivity, PerfisActivity::class.java)) }
             pinta(this, cinza)
         }
+        findViewById<Button>(R.id.diag).apply {
+            setOnClickListener { startActivity(Intent(this@MainActivity, DiagnosticoActivity::class.java)) }
+            pinta(this, cinza)
+        }
         findViewById<Button>(R.id.log).apply {
             setOnClickListener { startActivity(Intent(this@MainActivity, RegistrosActivity::class.java)) }
             pinta(this, cinza)
@@ -158,7 +162,7 @@ class MainActivity : Activity() {
         autoTexto(vbatTxt, 28); autoTexto(corrTxt, 28); autoTexto(tempTxt, 28)
         listOf(bF, bN, bR).forEach { autoTexto(it, 44) }
         autoTexto(bCmd, 22)
-        listOf(R.id.parar, R.id.reset, R.id.som, R.id.perfis, R.id.config, R.id.log)
+        listOf(R.id.parar, R.id.reset, R.id.som, R.id.perfis, R.id.config, R.id.diag, R.id.log)
             .forEach { autoTexto(findViewById(it), if (it == R.id.parar) 34 else 22) }
         montaModos()
         atualizaBotoes()
@@ -321,6 +325,13 @@ class MainActivity : Activity() {
                         estInv = base[4]
                         torque = base[7].toShort() / 10.0
                         cargaPct = bateria.atualizar(vbat, corrente, Config.CICLO_MS / 1000.0)
+                        if (Conexao.diagAtivo) {
+                            if (ciclo % 2 == 0) mb.readHolding(38, 1)?.let { Conexao.rpmEncoder = it[0] }
+                            mb.readHolding(18, 1)?.let { acelerador = it[0].toShort() / 100.0 }
+                        }
+                        Conexao.freqHz = freq; Conexao.refRpm = refRpm; Conexao.acelerador = acelerador
+                        Conexao.torque = torque; Conexao.corrente = corrente
+                        Conexao.atualizado = System.currentTimeMillis()
                         mb.readHolding(Config.R_ESTADO, 1)?.let { ultEstadoLogico = it[0] }
                         estado = ultEstadoLogico; temp = ultTemp
                         // a cada 1 s: temperatura, acelerador, alarme e falha (menos trafego no barramento)
@@ -542,9 +553,10 @@ class MainActivity : Activity() {
                     avisa("Fator = ${"%.3f".format(novo)}")
                 } else avisa("Valor fora da faixa")
             }
-            .setNeutralButton("Voltar ao padrão") { _, _ ->
-                fatorVel = Config.FATOR_VEL_PADRAO
-                getSharedPreferences("app", Context.MODE_PRIVATE).edit().remove("fator_vel").apply()
+            .setNeutralButton("Sem correção (1)") { _, _ ->
+                fatorVel = 1.0
+                getSharedPreferences("app", Context.MODE_PRIVATE).edit().putFloat("fator_vel", 1f).apply()
+                Registro.evento("VELOCIDADE", "Fator de correção = 1 (sem correção)")
             }
             .setNegativeButton("Cancelar", null)
             .show()
