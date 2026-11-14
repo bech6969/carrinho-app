@@ -72,6 +72,11 @@ class DiagnosticoActivity : Activity() {
             background = GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(Color.parseColor("#1A73E8")) }
             setOnClickListener { startActivity(android.content.Intent(this@DiagnosticoActivity, SoftplcActivity::class.java)) }
         }, LinearLayout.LayoutParams(MATCH_PARENT, dp(52)).apply { topMargin = dp(8) })
+        raiz.addView(Button(this).apply {
+            text = "Monitor ao vivo (10 parâmetros) →"; isAllCaps = false; textSize = 16f; setTextColor(Color.WHITE)
+            background = GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(Color.parseColor("#1E8E3E")) }
+            setOnClickListener { startActivity(android.content.Intent(this@DiagnosticoActivity, MonitorActivity::class.java)) }
+        }, LinearLayout.LayoutParams(MATCH_PARENT, dp(52)).apply { topMargin = dp(8) })
         linhas = TextView(this).apply {
             typeface = Typeface.MONOSPACE; textSize = 20f; setTextColor(Color.parseColor("#E8EAED"))
             setPadding(dp(4), dp(12), dp(4), dp(4))
