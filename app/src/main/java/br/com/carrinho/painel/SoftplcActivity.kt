@@ -182,7 +182,7 @@ class SoftplcActivity : Activity() {
         if (plc && p1000 != 4) status.append("\n⚠ Pedal na SoftPLC mas o programa não está rodando: o carrinho não anda.")
         pinta(btDireto, !plc && p231 != null, "#1A73E8")
         pinta(btPlc, plc, "#8430CE")
-        btRodar.text = if (p1001 == 1) "⏹ Parar o programa (P1001 = 0)" else "▶ Rodar o programa (P1001 = 1)"
+        btRodar.text = if (p1001 == 1) "⏹ Parar o programa (P1001 = 0)" else "▶ Rodar o programa (P1003 = 0, P1001 = 1)"
         pinta(btRodar, p1001 == 1, "#B06000")
     }
 
@@ -270,6 +270,7 @@ class SoftplcActivity : Activity() {
             return
         }
         emSegundoPlano(if (liga) "Ligando o programa…" else "Parando o programa…") { mb ->
+            if (liga && !escreve(mb, 1003, 0)) return@emSegundoPlano "O inversor não aceitou P1003 = 0 (Usuário)."
             if (escreve(mb, 1001, if (liga) 1 else 0)) (if (liga) "✔ Programa rodando." else "Programa parado.")
             else "O inversor não aceitou P1001. O programa está instalado?"
         }
