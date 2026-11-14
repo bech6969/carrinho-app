@@ -158,6 +158,7 @@ class ReguladorActivity : Activity() {
             .setMessage("Grava P0303 = 1: o valor passa a valer depois de desligar o inversor.")
             .setPositiveButton("Salvar") { _, _ ->
                 Thread {
+                    mb.writeSingle(0, Config.SENHA_P0000)
                     val ok = mb.writeSingle(303, 1)
                     Registro.evento("REGULADOR", "P0303 = 1 com P0162 = ${f3(p162)} " + if (ok) "OK" else "FALHOU")
                     runOnUiThread { info.text = if (ok) "✔ Salvo na memória. P0162 = ${f3(p162)}" else "Falhou gravar P0303." }
